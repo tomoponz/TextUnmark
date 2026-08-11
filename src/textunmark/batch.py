@@ -24,6 +24,7 @@ class BatchItem:
     finding_count_after: int
     change_count: int
     output_path: str | None = None
+    backup_path: str | None = None
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -34,6 +35,7 @@ class BatchItem:
             "finding_count_after": self.finding_count_after,
             "change_count": self.change_count,
             "output_path": self.output_path,
+            "backup_path": self.backup_path,
             "error": self.error,
         }
 
@@ -67,12 +69,15 @@ def process_path(
     output_dir: Path | None = None,
     in_place: bool = False,
     dry_run: bool = False,
+    backup_suffix: str | None = None,
     profile: str = "conservative",
     normalization: str = "NFC",
     extensions: set[str] | None = None,
 ) -> dict[str, Any]:
     if in_place and output_dir is not None:
         raise ValueError("in_place and output_dir are mutually exclusive")
+    if backup_suffix and not in_place:
+        raise ValueError("backup_suffix requires in_place")
     if not root.exists():
         raise FileNotFoundError(root)
 
@@ -90,9 +95,13 @@ def process_path(
             source = path.read_text(encoding="utf-8")
             result = sanitize_text(source, profile=profile, normalization=normalization)
             destination: Path | None = None
+            backup: Path | None = None
             if result.changed and not dry_run:
                 if in_place:
                     destination = path
+                    if backup_suffix:
+                        backup = path.with_name(path.name + backup_suffix)
+                        backup.write_text(source, encoding="utf-8")
                 elif output_dir is not None:
                     destination = output_dir / path.relative_to(base)
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -107,6 +116,7 @@ def process_path(
                     finding_count_after=int(result.after["finding_count"]),
                     change_count=result.change_count,
                     output_path=str(destination) if destination else None,
+                    backup_path=str(backup) if backup else None,
                 )
             )
         except (UnicodeDecodeError, OSError) as exc:
@@ -118,6 +128,7 @@ def process_path(
         "normalization": normalization,
         "dry_run": dry_run,
         "in_place": in_place,
+        "backup_suffix": backup_suffix,
         "file_count": len(items),
         "changed_count": sum(item.changed for item in items),
         "error_count": sum(item.error is not None for item in items),
