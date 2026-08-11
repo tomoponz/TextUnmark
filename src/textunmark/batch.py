@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .sanitize import sanitize_text
-from .unicode_scan import inspect_text
 
 
 DEFAULT_EXTENSIONS = {
@@ -13,6 +12,8 @@ DEFAULT_EXTENSIONS = {
     ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".java", ".kt", ".kts",
     ".c", ".h", ".cpp", ".hpp", ".cs", ".go", ".rs", ".swift", ".html", ".css", ".xml",
 }
+
+SKIP_DIRS = {".git", ".venv", "node_modules", "dist", "build", "__pycache__"}
 
 
 @dataclass(frozen=True)
@@ -46,10 +47,18 @@ def iter_text_files(root: Path, extensions: set[str] | None = None) -> Iterable[
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        if any(part in {".git", ".venv", "node_modules", "dist", "build"} for part in path.parts):
+        if any(part in SKIP_DIRS for part in path.parts):
             continue
         if path.suffix.lower() in allowed:
             yield path
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def process_path(
@@ -64,11 +73,19 @@ def process_path(
 ) -> dict[str, Any]:
     if in_place and output_dir is not None:
         raise ValueError("in_place and output_dir are mutually exclusive")
+    if not root.exists():
+        raise FileNotFoundError(root)
 
     items: list[BatchItem] = []
     base = root.parent if root.is_file() else root
 
-    for path in iter_text_files(root, extensions):
+    # Snapshot inputs before any writes so an output directory nested beneath the
+    # input root can never feed generated files back into the same batch run.
+    paths = list(iter_text_files(root, extensions))
+    if output_dir is not None and root.is_dir() and _is_within(output_dir, root):
+        paths = [path for path in paths if not _is_within(path, output_dir)]
+
+    for path in paths:
         try:
             source = path.read_text(encoding="utf-8")
             result = sanitize_text(source, profile=profile, normalization=normalization)
