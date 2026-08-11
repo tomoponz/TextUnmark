@@ -1,0 +1,5 @@
+[textunmark]
+profile = "conservative"
+normalization = "NFC"
+detectors = ["unicode-artifact"]
+extensions = [".txt", ".md", ".py", ".js", ".json"]
