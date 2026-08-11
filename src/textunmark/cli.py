@@ -159,6 +159,10 @@ def build_parser() -> argparse.ArgumentParser:
     destination.add_argument("--output-dir", help="Write changed files under this directory")
     destination.add_argument("--in-place", action="store_true", help="Modify changed files in place")
     batch_parser.add_argument("--dry-run", action="store_true", help="Never write text files")
+    batch_parser.add_argument(
+        "--backup-suffix",
+        help="When used with --in-place, save original files with this suffix (for example .bak)",
+    )
     batch_parser.add_argument("--json", action="store_true")
     batch_parser.add_argument("--report", help="Write batch JSON report to file")
     batch_parser.add_argument(
@@ -285,6 +289,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "batch":
+        if args.backup_suffix and not args.in_place:
+            print("error: --backup-suffix requires --in-place", file=sys.stderr)
+            return 2
         settings = _settings(args)
         profile, normalization = _profile_values(args, settings)
         configured_extensions = args.extensions or list(settings.extensions)
@@ -298,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=Path(args.output_dir) if args.output_dir else None,
             in_place=args.in_place,
             dry_run=args.dry_run,
+            backup_suffix=args.backup_suffix,
             profile=profile,
             normalization=normalization,
             extensions=extensions,
