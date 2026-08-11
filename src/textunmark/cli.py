@@ -49,6 +49,8 @@ def _write_json(path: str | None, data: object) -> None:
 
 def _print_inspection(report: dict[str, object]) -> None:
     print(f"Length: {report['length']}")
+    print(f"UTF-8 bytes: {report['utf8_bytes']}")
+    print(f"Lines: {report['line_count']}")
     print(f"Findings: {report['finding_count']}")
     print(f"Context-sensitive: {report['context_sensitive_count']}")
     findings = report["findings"]
@@ -58,8 +60,9 @@ def _print_inspection(report: dict[str, object]) -> None:
     print()
     for item in findings:
         flag = " [context-sensitive]" if item["context_sensitive"] else ""
+        location = f"{item['line']}:{item['column']}"
         print(
-            f"{item['index']:>6}  {item['codepoint']}  {item['name']}"
+            f"{location:>10}  idx={item['index']:<6} {item['codepoint']}  {item['name']}"
             f"  ({item['reason']}){flag}"
         )
 
@@ -113,6 +116,11 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = sub.add_parser("inspect", help="Inspect suspicious Unicode characters")
     inspect_parser.add_argument("input", help="UTF-8 file path or - for stdin")
     inspect_parser.add_argument("--json", action="store_true", help="Emit JSON report")
+    inspect_parser.add_argument(
+        "--fail-on-findings",
+        action="store_true",
+        help="Exit 1 when one or more findings are present",
+    )
 
     sanitize_parser = sub.add_parser("sanitize", help="Normalize text")
     sanitize_parser.add_argument("input", help="UTF-8 file path or - for stdin")
@@ -154,6 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--json", action="store_true")
     batch_parser.add_argument("--report", help="Write batch JSON report to file")
     batch_parser.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help="Exit 1 when one or more files would change (errors still exit 2)",
+    )
+    batch_parser.add_argument(
         "--ext",
         action="append",
         dest="extensions",
@@ -163,6 +176,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser = sub.add_parser("scan", help="Scan a file or tree and emit SARIF")
     scan_parser.add_argument("root")
     scan_parser.add_argument("-o", "--output", default="-", help="SARIF output path or - for stdout")
+    scan_parser.add_argument(
+        "--fail-on-findings",
+        action="store_true",
+        help="Exit 1 when the SARIF result contains findings",
+    )
 
     report_parser = sub.add_parser("report", help="Generate a standalone local HTML analysis report")
     report_parser.add_argument("input")
@@ -186,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "inspect":
         report = inspect_text(_read_text(args.input))
         _json_dump(report) if args.json else _print_inspection(report)
+        if args.fail_on_findings and report["finding_count"]:
+            return 1
         return 0
 
     if args.command == "sanitize":
@@ -291,11 +311,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Changed: {report['changed_count']}")
             print(f"Errors: {report['error_count']}")
             print(f"Findings: {report['finding_count_before']} -> {report['finding_count_after']}")
-        return 2 if report["error_count"] else 0
+        if report["error_count"]:
+            return 2
+        if args.fail_on_change and report["changed_count"]:
+            return 1
+        return 0
 
     if args.command == "scan":
         sarif = scan_to_sarif(Path(args.root))
         _write_json(args.output, sarif)
+        finding_count = len(sarif["runs"][0]["results"])
+        if args.fail_on_findings and finding_count:
+            return 1
         return 0
 
     if args.command == "report":
