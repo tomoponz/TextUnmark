@@ -31,6 +31,9 @@ BIDI_RANGES = (
 @dataclass(frozen=True)
 class Finding:
     index: int
+    line: int
+    column: int
+    utf8_offset: int
     codepoint: str
     character: str
     name: str
@@ -69,33 +72,46 @@ def _classify(ch: str) -> tuple[str, bool] | None:
 
 def inspect_text(text: str) -> dict[str, object]:
     findings: list[Finding] = []
+    line = 1
+    column = 1
+    utf8_offset = 0
 
     for index, ch in enumerate(text):
         classification = _classify(ch)
-        if classification is None:
-            continue
-
-        reason, context_sensitive = classification
-        cp = ord(ch)
-        fallback_name = KNOWN_CHARACTERS.get(cp, ("UNKNOWN", "", False))[0]
-        name = unicodedata.name(ch, fallback_name)
-        findings.append(
-            Finding(
-                index=index,
-                codepoint=f"U+{cp:04X}",
-                character=ch,
-                name=name,
-                category=unicodedata.category(ch),
-                reason=reason,
-                context_sensitive=context_sensitive,
+        if classification is not None:
+            reason, context_sensitive = classification
+            cp = ord(ch)
+            fallback_name = KNOWN_CHARACTERS.get(cp, ("UNKNOWN", "", False))[0]
+            name = unicodedata.name(ch, fallback_name)
+            findings.append(
+                Finding(
+                    index=index,
+                    line=line,
+                    column=column,
+                    utf8_offset=utf8_offset,
+                    codepoint=f"U+{cp:04X}",
+                    character=ch,
+                    name=name,
+                    category=unicodedata.category(ch),
+                    reason=reason,
+                    context_sensitive=context_sensitive,
+                )
             )
-        )
+
+        utf8_offset += len(ch.encode("utf-8"))
+        if ch == "\n":
+            line += 1
+            column = 1
+        else:
+            column += 1
 
     by_reason = Counter(item.reason for item in findings)
     by_codepoint = Counter(item.codepoint for item in findings)
 
     return {
         "length": len(text),
+        "utf8_bytes": len(text.encode("utf-8")),
+        "line_count": text.count("\n") + 1,
         "finding_count": len(findings),
         "context_sensitive_count": sum(item.context_sensitive for item in findings),
         "by_reason": dict(sorted(by_reason.items())),
