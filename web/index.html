@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="TextUnmark local-first Unicode inspection and text normalization tool">
+  <title>TextUnmark</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="shell hero">
+    <div>
+      <p class="eyebrow">LOCAL-FIRST TEXT INSPECTION</p>
+      <h1>TextUnmark</h1>
+      <p class="lede">文章中の不可視Unicode、特殊空白、制御文字をブラウザ内だけで検査・正規化します。</p>
+    </div>
+    <div class="privacy">入力内容はこのページから送信しません</div>
+  </header>
+
+  <main class="shell">
+    <section class="editor-grid">
+      <article class="panel">
+        <div class="panel-head"><h2>Input</h2><button id="sampleBtn" class="quiet">サンプル</button></div>
+        <textarea id="input" spellcheck="false" placeholder="ここに文章を貼り付け…"></textarea>
+        <div class="actions">
+          <button id="inspectBtn">検査</button>
+          <button id="sanitizeBtn">Conservative sanitize</button>
+          <button id="strictBtn" class="danger-soft">Strict sanitize</button>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Result</h2><button id="copyBtn" class="quiet">コピー</button></div>
+        <textarea id="output" spellcheck="false" readonly placeholder="処理結果"></textarea>
+        <div class="actions">
+          <button id="downloadBtn" class="quiet">TXTを保存</button>
+          <button id="jsonBtn" class="quiet">JSONレポート</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="metrics" aria-label="summary">
+      <article><span>Characters</span><strong id="charCount">0</strong></article>
+      <article><span>Findings</span><strong id="findingCount">0</strong></article>
+      <article><span>Context-sensitive</span><strong id="contextCount">0</strong></article>
+      <article><span>Changed</span><strong id="changed">—</strong></article>
+    </section>
+
+    <section class="panel findings-panel">
+      <div class="panel-head"><h2>Findings</h2><span id="status" class="status">Ready</span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Index</th><th>Code point</th><th>Name</th><th>Reason</th><th>Context</th></tr></thead>
+          <tbody id="findingsBody"><tr><td colspan="5" class="empty">まだ検査していません。</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="notice">
+      <strong>Scope</strong>
+      <p>このWeb版は文字レベルのUnicode痕跡を扱います。Anthropicなどのモデルレベル透かしを検出・除去できるとは主張しません。</p>
+    </section>
+  </main>
+
+  <footer class="shell footer">TextUnmark · runs entirely in your browser</footer>
+  <script src="app.js"></script>
+</body>
+</html>
