@@ -3,66 +3,157 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="TextUnmark local-first Unicode inspection and text normalization tool">
-  <title>TextUnmark</title>
+  <meta name="description" content="TextUnmark — ブラウザ内だけで不可視Unicodeやテキスト上の機械可読痕跡を検査・可視化するローカルファーストツール">
+  <meta name="color-scheme" content="dark light">
+  <title>TextUnmark — local-first text inspection</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="shell hero">
-    <div>
-      <p class="eyebrow">LOCAL-FIRST TEXT INSPECTION</p>
+    <div class="hero-copy">
+      <p class="eyebrow">LOCAL-FIRST · NO UPLOAD</p>
       <h1>TextUnmark</h1>
-      <p class="lede">文章中の不可視Unicode、特殊空白、制御文字をブラウザ内だけで検査・正規化します。</p>
+      <p class="lede">文章を貼るかファイルを落とすだけ。不可視Unicodeや特殊な制御文字をブラウザ内で検査し、変更内容を確認してから処理できます。</p>
     </div>
-    <div class="privacy">入力内容はこのページから送信しません</div>
+    <div class="privacy-badge" aria-label="privacy">
+      <span class="privacy-dot" aria-hidden="true"></span>
+      入力内容はTextUnmarkのサーバーへ送信しません
+    </div>
   </header>
 
-  <main class="shell">
-    <section class="editor-grid">
-      <article class="panel">
-        <div class="panel-head"><h2>Input</h2><button id="sampleBtn" class="quiet">サンプル</button></div>
-        <textarea id="input" spellcheck="false" placeholder="ここに文章を貼り付け…"></textarea>
-        <div class="actions">
-          <button id="inspectBtn">検査</button>
-          <button id="sanitizeBtn">Conservative sanitize</button>
-          <button id="strictBtn" class="danger-soft">Strict sanitize</button>
+  <main class="shell app-shell">
+    <section class="workspace panel" aria-labelledby="workspaceTitle">
+      <div class="panel-head workspace-head">
+        <div>
+          <p class="section-kicker">01 · INPUT</p>
+          <h2 id="workspaceTitle">テキストを入力</h2>
         </div>
-      </article>
-
-      <article class="panel">
-        <div class="panel-head"><h2>Result</h2><button id="copyBtn" class="quiet">コピー</button></div>
-        <textarea id="output" spellcheck="false" readonly placeholder="処理結果"></textarea>
-        <div class="actions">
-          <button id="downloadBtn" class="quiet">TXTを保存</button>
-          <button id="jsonBtn" class="quiet">JSONレポート</button>
+        <div class="head-actions">
+          <button id="sampleBtn" class="button ghost" type="button">サンプル</button>
+          <button id="clearBtn" class="button ghost" type="button">クリア</button>
         </div>
-      </article>
-    </section>
+      </div>
 
-    <section class="metrics" aria-label="summary">
-      <article><span>Characters</span><strong id="charCount">0</strong></article>
-      <article><span>Findings</span><strong id="findingCount">0</strong></article>
-      <article><span>Context-sensitive</span><strong id="contextCount">0</strong></article>
-      <article><span>Changed</span><strong id="changed">—</strong></article>
-    </section>
+      <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-describedby="dropHelp">
+        <input id="fileInput" type="file" multiple hidden>
+        <strong>ファイルをドロップ</strong>
+        <span id="dropHelp">またはクリックして選択 · UTF-8テキスト · 1ファイル最大10 MB</span>
+      </div>
 
-    <section class="panel findings-panel">
-      <div class="panel-head"><h2>Findings</h2><span id="status" class="status">Ready</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Index</th><th>Code point</th><th>Name</th><th>Reason</th><th>Context</th></tr></thead>
-          <tbody id="findingsBody"><tr><td colspan="5" class="empty">まだ検査していません。</td></tr></tbody>
-        </table>
+      <textarea id="input" spellcheck="false" autocomplete="off" placeholder="ここに文章を貼り付けてください…" aria-label="検査するテキスト"></textarea>
+
+      <div class="profile-row" role="radiogroup" aria-label="処理モード">
+        <label class="profile-card selected">
+          <input type="radio" name="profile" value="inspect" checked>
+          <span class="profile-title">検査のみ</span>
+          <span class="profile-description">文章を一切変更せず、含まれる痕跡だけを確認します。</span>
+        </label>
+        <label class="profile-card">
+          <input type="radio" name="profile" value="standard">
+          <span class="profile-title">標準クリーンアップ</span>
+          <span class="profile-description">不可視文字や特殊空白を整理します。改行・組版が変わる場合があります。</span>
+        </label>
+        <label class="profile-card danger-card">
+          <input type="radio" name="profile" value="aggressive">
+          <span class="profile-title">強力なクリーンアップ</span>
+          <span class="profile-description">結合・双方向・Variation Selector等も対象。表示や意味を変える可能性があります。</span>
+        </label>
+      </div>
+
+      <div class="primary-actions">
+        <button id="analyzeBtn" class="button primary" type="button">解析する</button>
+        <span id="inputMeta" class="muted">0文字</span>
       </div>
     </section>
 
-    <section class="notice">
-      <strong>Scope</strong>
-      <p>このWeb版は文字レベルのUnicode痕跡を扱います。Anthropicなどのモデルレベル透かしを検出・除去できるとは主張しません。</p>
+    <section id="resultsSection" class="results" aria-live="polite">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">02 · ANALYSIS</p>
+          <h2>解析結果</h2>
+        </div>
+        <span id="status" class="status-pill">入力待ち</span>
+      </div>
+
+      <div class="metrics" aria-label="解析概要">
+        <article class="metric-card"><span>Characters</span><strong id="charCount">0</strong><small>Unicode code points</small></article>
+        <article class="metric-card"><span>Findings</span><strong id="findingCount">0</strong><small>検査対象の文字</small></article>
+        <article class="metric-card"><span>Changes</span><strong id="changeCount">0</strong><small>選択モードによる変更</small></article>
+        <article class="metric-card"><span>Files</span><strong id="fileCount">0</strong><small>読み込み済み</small></article>
+      </div>
+
+      <div class="result-grid">
+        <article class="panel result-panel">
+          <div class="panel-head">
+            <div><p class="section-kicker">RESULT</p><h2>処理後テキスト</h2></div>
+            <div class="head-actions">
+              <button id="copyBtn" class="button ghost" type="button">コピー</button>
+              <button id="downloadBtn" class="button ghost" type="button">TXT保存</button>
+            </div>
+          </div>
+          <textarea id="output" readonly spellcheck="false" aria-label="処理後テキスト" placeholder="解析結果がここに表示されます"></textarea>
+          <div class="result-footer">
+            <span id="changedLabel" class="muted">変更なし</span>
+            <button id="jsonBtn" class="text-button" type="button">JSONレポートを保存</button>
+          </div>
+        </article>
+
+        <article class="panel detector-panel">
+          <div class="panel-head"><div><p class="section-kicker">DETECTORS</p><h2>検出器</h2></div></div>
+          <div id="detectorList" class="detector-list">
+            <div class="empty-state">解析すると検出器の状態が表示されます。</div>
+          </div>
+        </article>
+      </div>
+
+      <article class="panel findings-panel">
+        <div class="panel-head">
+          <div><p class="section-kicker">FINDINGS</p><h2>見つかった文字</h2></div>
+          <span id="findingSummary" class="muted">0件</span>
+        </div>
+        <div id="findingCards" class="finding-cards">
+          <div class="empty-state">まだ解析していません。</div>
+        </div>
+      </article>
+
+      <article class="panel changes-panel">
+        <div class="panel-head">
+          <div><p class="section-kicker">CHANGES</p><h2>変更プレビュー</h2></div>
+          <span id="mutationSummary" class="muted">0件</span>
+        </div>
+        <div id="mutationList" class="mutation-list">
+          <div class="empty-state">「検査のみ」では文章を変更しません。</div>
+        </div>
+      </article>
+
+      <article id="filesPanel" class="panel files-panel" hidden>
+        <div class="panel-head">
+          <div><p class="section-kicker">FILES</p><h2>ファイル監査</h2></div>
+          <button id="rescanFilesBtn" class="button ghost" type="button">再スキャン</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>File</th><th>Size</th><th>Findings</th><th>Lines</th><th></th></tr></thead>
+            <tbody id="filesBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <section class="scope-note">
+      <div>
+        <strong>現在の対応範囲</strong>
+        <p>不可視Unicode・特殊空白・制御文字など、文字列から直接確認できる痕跡を扱います。Anthropicのモデルレベル透かしは、再現可能な公開仕様または検出器が利用できるまで「未対応」と明示します。</p>
+      </div>
+      <div class="scope-chip">Browser-first · Local processing</div>
     </section>
   </main>
 
-  <footer class="shell footer">TextUnmark · runs entirely in your browser</footer>
-  <script src="app.js"></script>
+  <footer class="shell footer">
+    <span>TextUnmark</span>
+    <span>Static web app · no backend required</span>
+  </footer>
+
+  <script type="module" src="app.mjs"></script>
 </body>
 </html>
