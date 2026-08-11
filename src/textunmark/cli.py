@@ -9,6 +9,7 @@ import sys
 from . import __version__
 from .batch import process_path
 from .compare import compare_texts
+from .config import Settings, load_config
 from .detectors.registry import available_detectors, run_detectors
 from .pipeline import analyze_text
 from .report import render_analysis_html
@@ -63,18 +64,42 @@ def _print_inspection(report: dict[str, object]) -> None:
         )
 
 
+def _add_config_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        help="TOML config path; defaults to ./textunmark.toml when present",
+    )
+
+
 def _add_profile_args(parser: argparse.ArgumentParser) -> None:
+    _add_config_arg(parser)
     parser.add_argument(
         "--profile",
         choices=["conservative", "strict"],
-        default="conservative",
-        help="strict can alter emoji, bidi text, and some scripts",
+        default=None,
+        help="Override config profile; strict can alter emoji, bidi text, and some scripts",
     )
     parser.add_argument(
         "--normalization",
         choices=["none", "NFC", "NFKC"],
-        default="NFC",
+        default=None,
+        help="Override config normalization",
     )
+
+
+def _settings(args: argparse.Namespace) -> Settings:
+    return load_config(getattr(args, "config", None))
+
+
+def _profile_values(args: argparse.Namespace, settings: Settings) -> tuple[str, str]:
+    return args.profile or settings.profile, args.normalization or settings.normalization
+
+
+def _detector_values(args: argparse.Namespace, settings: Settings) -> list[str] | None:
+    explicit = getattr(args, "detectors", None)
+    if explicit:
+        return explicit
+    return list(settings.detectors) or None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     detect_parser = sub.add_parser("detect", help="Run registered detector adapters")
     detect_parser.add_argument("input")
+    _add_config_arg(detect_parser)
     detect_parser.add_argument("--detector", action="append", dest="detectors")
     detect_parser.add_argument("--json", action="store_true")
 
@@ -145,7 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--detector", action="append", dest="detectors")
     report_parser.add_argument("--title", default="TextUnmark analysis report")
 
-    sub.add_parser("doctor", help="Show local runtime and detector availability")
+    doctor_parser = sub.add_parser("doctor", help="Show local runtime and detector availability")
+    _add_config_arg(doctor_parser)
+
+    config_parser = sub.add_parser("config", help="Show resolved TextUnmark configuration")
+    _add_config_arg(config_parser)
+    config_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -158,8 +189,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "sanitize":
+        settings = _settings(args)
+        profile, normalization = _profile_values(args, settings)
         source = _read_text(args.input)
-        result = sanitize_text(source, profile=args.profile, normalization=args.normalization)
+        result = sanitize_text(source, profile=profile, normalization=normalization)
         if args.report:
             report = result.to_dict(include_text=False)
             if args.report == "-":
@@ -188,11 +221,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "analyze":
+        settings = _settings(args)
+        profile, normalization = _profile_values(args, settings)
         result = analyze_text(
             _read_text(args.input),
-            profile=args.profile,
-            normalization=args.normalization,
-            detector_ids=args.detectors,
+            profile=profile,
+            normalization=normalization,
+            detector_ids=_detector_values(args, settings),
         )
         report = result.to_dict(include_text=args.include_text)
         if args.output:
@@ -209,7 +244,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "detect":
-        results = [r.to_dict() for r in run_detectors(_read_text(args.input), args.detectors)]
+        settings = _settings(args)
+        results = [
+            r.to_dict()
+            for r in run_detectors(_read_text(args.input), _detector_values(args, settings))
+        ]
         if args.json:
             _json_dump(results)
         else:
@@ -226,16 +265,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "batch":
+        settings = _settings(args)
+        profile, normalization = _profile_values(args, settings)
+        configured_extensions = args.extensions or list(settings.extensions)
         extensions = None
-        if args.extensions:
-            extensions = {ext if ext.startswith(".") else f".{ext}" for ext in args.extensions}
+        if configured_extensions:
+            extensions = {
+                ext if ext.startswith(".") else f".{ext}" for ext in configured_extensions
+            }
         report = process_path(
             Path(args.root),
             output_dir=Path(args.output_dir) if args.output_dir else None,
             in_place=args.in_place,
             dry_run=args.dry_run,
-            profile=args.profile,
-            normalization=args.normalization,
+            profile=profile,
+            normalization=normalization,
             extensions=extensions,
         )
         if args.report:
@@ -255,11 +299,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "report":
+        settings = _settings(args)
+        profile, normalization = _profile_values(args, settings)
         result = analyze_text(
             _read_text(args.input),
-            profile=args.profile,
-            normalization=args.normalization,
-            detector_ids=args.detectors,
+            profile=profile,
+            normalization=normalization,
+            detector_ids=_detector_values(args, settings),
         )
         html = render_analysis_html(args.title, result.to_dict(include_text=False))
         _write_text(args.output, html)
@@ -267,13 +313,27 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "doctor":
+        settings = _settings(args)
         print(f"TextUnmark: {__version__}")
         print(f"Python: {platform.python_version()}")
         print(f"Platform: {platform.platform()}")
         print("Runtime dependencies: none")
+        print(f"Config: {settings.source or '(defaults)'}")
         print("Detectors:")
         for detector in available_detectors():
             print(f"  - {detector['id']}: {detector['label']}")
+        return 0
+
+    if args.command == "config":
+        settings = _settings(args)
+        if args.json:
+            _json_dump(settings.to_dict())
+        else:
+            print(f"Source: {settings.source or '(defaults)'}")
+            print(f"Profile: {settings.profile}")
+            print(f"Normalization: {settings.normalization}")
+            print(f"Detectors: {', '.join(settings.detectors) or '(all built-ins)'}")
+            print(f"Extensions: {', '.join(settings.extensions) or '(built-in defaults)'}")
         return 0
 
     return 2
