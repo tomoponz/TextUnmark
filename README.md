@@ -1,263 +1,104 @@
 # TextUnmark
 
-TextUnmark is a local-first toolkit for inspecting suspicious Unicode markers, normalizing text, scanning repositories, generating reproducible reports, and experimenting with text-watermark detectors through a stable plugin interface.
+TextUnmark is a **browser-first, local-first** toolkit for inspecting invisible Unicode, unusual spaces, control characters, and other explicit text artifacts before deciding whether to normalize them.
 
-It currently focuses on text-level artifacts that can be inspected deterministically: zero-width characters, unusual spaces, format controls, bidi controls, join controls, variation selectors, Unicode tag characters, and related code points.
+The primary product is the static Web app in `web/`. The Python CLI remains available for experiments, automation, repository scanning, and reference testing.
 
-> **Current scope:** TextUnmark does **not** claim to detect or remove Anthropic's announced model-level watermark. Anthropic has not yet published enough technical detail for a verified implementation. Provider-specific support should be added only after a reproducible public specification or detector is available.
+> **Current scope:** TextUnmark does **not** claim to detect or remove Anthropic's announced model-level watermark. Anthropic-specific support should only be added after a reproducible public specification or detector becomes available. The current browser detector reports explicit Unicode artifacts and labels Anthropic detection as unavailable.
 
-## Highlights
+## Browser app
 
-- Local-first CLI with no runtime dependencies on Python 3.11+.
-- Browser UI under `web/` that performs inspection and sanitization entirely on-device.
-- Exact Unicode findings with code point, index, line, column, UTF-8 offset, category, and reason.
-- Conservative and strict sanitization profiles.
-- NFC / opt-in NFKC normalization.
-- SHA-256, similarity, edit-operation, and before/after marker comparison.
-- Detector plugin API with a built-in Unicode artifact detector.
-- Recursive batch processing for text, Markdown, source code, JSON, YAML, HTML, CSS, and more.
-- SARIF output for repository/code-scanning workflows.
-- Standalone HTML analysis reports.
-- JSON output throughout for reproducible experiments and automation.
-- TOML configuration via `textunmark.toml`.
-- GitHub Actions tests on Python 3.11, 3.12, and 3.13 plus browser JavaScript syntax validation.
+The Web app runs without a backend. Text pasted into the editor and text files opened through the file picker are processed locally in the browser by JavaScript and a Web Worker.
 
-## Install
+### Features
 
-```bash
-python -m pip install -e .
-```
+- Paste text and inspect it immediately.
+- Drag and drop one or more UTF-8 text/source files.
+- File audit table with finding counts and line counts.
+- 10 MB per-file guard and basic binary/NUL rejection.
+- Exact finding positions using Unicode code-point index, UTF-16 index, UTF-8 byte offset, line, and column.
+- Detection of known zero-width characters, special spaces, bidi controls, join controls, variation selectors, Unicode tags, and generic Unicode `Cf` / `Cc` controls.
+- Three explicit modes:
+  - **Inspect only** — no text mutation.
+  - **Standard cleanup** — normalizes a limited set of invisible characters and spaces, with every mutation shown before copying/downloading.
+  - **Aggressive cleanup** — also removes context-sensitive formatting characters; this can change presentation or meaning.
+- Per-finding context previews.
+- Exact mutation list instead of a guessed edit-count metric.
+- Detector panel that separates descriptive Unicode findings from provider watermark detection.
+- Copy result, download TXT, and export a JSON report.
+- Responsive layout for desktop and mobile.
+- No third-party runtime dependencies.
 
-This installs the `textunmark` command.
+### Run locally
 
-```bash
-textunmark --version
-textunmark doctor
-```
-
-## Quick start
-
-Inspect a file:
+From the repository root:
 
 ```bash
-textunmark inspect input.txt
-textunmark inspect input.txt --json
+python -m http.server 8000
 ```
 
-Sanitize conservatively:
-
-```bash
-textunmark sanitize input.txt -o cleaned.txt
-```
-
-Compare the original and cleaned files:
-
-```bash
-textunmark compare input.txt cleaned.txt
-```
-
-Run the complete analysis pipeline:
-
-```bash
-textunmark analyze input.txt
-textunmark analyze input.txt --json
-```
-
-Generate a standalone HTML report:
-
-```bash
-textunmark report input.txt -o report.html
-```
-
-## Inspect
-
-`inspect` reports suspicious/invisible characters without changing the input.
-
-```bash
-printf 'A\u200bB\n' | textunmark inspect -
-```
-
-Example:
+Then open:
 
 ```text
-     1  U+200B  ZERO WIDTH SPACE  (zero-width)
+http://localhost:8000/
 ```
 
-The JSON representation also contains line, column, UTF-8 byte offset, Unicode category, and whether the character is context-sensitive.
+The root `index.html` forwards to `web/`.
 
-## Sanitization profiles
-
-The default `conservative` profile removes or normalizes a small set of broadly non-semantic text artifacts while preserving characters that may be meaningful in emoji, bidirectional text, or some writing systems.
-
-```bash
-textunmark sanitize input.txt -o cleaned.txt
-```
-
-It currently:
-
-- removes ZERO WIDTH SPACE, WORD JOINER, SOFT HYPHEN, and BOM/ZWNBSP;
-- converts common no-break/figure spaces to ordinary spaces;
-- normalizes line endings;
-- applies NFC by default;
-- preserves ZWJ, ZWNJ, bidi controls, and variation selectors.
-
-Generate a JSON report:
-
-```bash
-textunmark sanitize input.txt -o cleaned.txt --report sanitize.json
-```
-
-Check without writing output:
-
-```bash
-textunmark sanitize input.txt --check
-```
-
-`strict` removes additional context-sensitive formatting characters and is intended for controlled experiments:
-
-```bash
-textunmark sanitize input.txt -o cleaned.txt --profile strict
-```
-
-**Strict mode can change emoji presentation, bidirectional text, and scripts that rely on join controls.**
-
-NFKC is also explicit because compatibility normalization can change representation:
-
-```bash
-textunmark sanitize input.txt -o cleaned.txt --normalization NFKC
-```
-
-## Analyze
-
-`analyze` combines inspection, a sanitization preview, before/after comparison, and all configured detectors.
-
-```bash
-textunmark analyze input.txt
-textunmark analyze input.txt --json
-textunmark analyze input.txt --include-text --json
-```
-
-The output includes:
-
-- Unicode findings;
-- sanitization changes;
-- SHA-256 hashes;
-- `SequenceMatcher` similarity;
-- insert/delete/replace operations;
-- detector scores before and after sanitization.
-
-## Detector plugins
-
-List available detectors:
-
-```bash
-textunmark detectors
-```
-
-Run detectors directly:
-
-```bash
-textunmark detect input.txt
-textunmark detect input.txt --detector unicode-artifact --json
-```
-
-The built-in `unicode-artifact` detector is deliberately labeled as an artifact detector. Its score is a bounded marker-density indicator, **not a probability that text contains an AI watermark**.
-
-Provider-specific detectors can implement the stable adapter under `src/textunmark/detectors/` when reproducible public specifications become available.
-
-## Batch processing
-
-Dry-run an entire project:
-
-```bash
-textunmark batch . --dry-run
-```
-
-Write changed files to a separate tree:
-
-```bash
-textunmark batch ./input --output-dir ./cleaned
-```
-
-Modify files in place only when explicitly requested:
-
-```bash
-textunmark batch ./docs --in-place
-```
-
-Limit file extensions:
-
-```bash
-textunmark batch . --dry-run --ext .md --ext .py
-```
-
-By default, common text/source formats are supported and directories such as `.git`, `.venv`, `node_modules`, `build`, and `dist` are skipped.
-
-## SARIF scanning
-
-Generate SARIF 2.1.0 for repository inspection workflows:
-
-```bash
-textunmark scan . -o textunmark.sarif
-```
-
-Each finding includes a rule ID such as `unicode/zero-width` and a file/line/column location.
-
-## HTML reports
-
-Create a self-contained local report:
-
-```bash
-textunmark report input.txt -o report.html --title "My analysis"
-```
-
-The report includes marker counts, before/after similarity, detector scores, findings, and SHA-256 integrity values. It has no remote runtime dependency.
-
-## Configuration
-
-TextUnmark automatically reads `./textunmark.toml` when present. You can also provide an explicit config path with `--config` on commands that use profiles or detectors.
-
-Example (`examples/textunmark.toml`):
-
-```toml
-[textunmark]
-profile = "conservative"
-normalization = "NFC"
-detectors = ["unicode-artifact"]
-extensions = [".txt", ".md", ".py", ".js", ".json"]
-```
-
-Inspect resolved settings:
-
-```bash
-textunmark config
-textunmark config --json
-```
-
-Command-line profile, normalization, detector, and extension options override the corresponding configured values.
-
-## Browser UI
-
-The `web/` directory contains a dependency-free browser version.
-
-For local use, serve the repository directory with any static server, for example:
+You can also serve only the Web directory:
 
 ```bash
 python -m http.server 8000 -d web
 ```
 
-Then open `http://localhost:8000`.
+### GitHub Pages
 
-The browser UI supports:
+The repository now contains a static root entry point plus the complete app under `web/`, so it is ready to be served from a static host such as GitHub Pages. This repository does not automatically enable or publish GitHub Pages; deployment can be configured separately when desired.
 
-- paste-and-inspect;
-- conservative and strict sanitization;
-- finding tables;
-- TXT download;
-- JSON report download;
-- clipboard copy.
+## Web architecture
 
-Text remains in the browser; the included Web UI does not send it to a TextUnmark server.
+```text
+web/
+  index.html       UI shell
+  styles.css       responsive UI
+  app.mjs          browser workflow, files, rendering, downloads
+  engine.mjs       Unicode inspection, cleanup, detector registry
+  worker.mjs       background analysis
+  engine.test.mjs  Node-based browser-engine tests
+```
+
+The analysis engine is deliberately separated from the DOM layer so the same logic can be called from the Web Worker and test suite.
+
+## Cleanup behavior
+
+TextUnmark defaults to **Inspect only** in the browser. No text is changed until a cleanup mode is selected.
+
+`Standard cleanup` currently handles a limited set of explicit characters such as ZERO WIDTH SPACE, SOFT HYPHEN, WORD JOINER, BOM/ZWNBSP, NO-BREAK SPACE, FIGURE SPACE, and NARROW NO-BREAK SPACE, plus newline and NFC normalization. These changes can still affect line breaking or typography, so the app exposes every mutation instead of calling the mode lossless.
+
+`Aggressive cleanup` additionally removes context-sensitive findings such as join/bidi controls and variation selectors. Use it only after reviewing the change list.
+
+## Detector model
+
+The browser detector registry currently contains:
+
+- `unicode-artifact` — available; reports explicit Unicode findings and descriptive metrics such as finding count and artifact density. It is **not** an AI-watermark probability.
+- `anthropic` — intentionally unavailable placeholder until a reproducible public detector/specification can be integrated.
+
+Future detector implementations should preserve this distinction rather than converting unrelated metrics into a generic probability-like score.
+
+## Python CLI (secondary)
+
+Python 3.11+ is still supported for automation and experiments:
+
+```bash
+python -m pip install -e .
+textunmark inspect input.txt
+textunmark analyze input.txt --json
+textunmark batch . --dry-run
+textunmark scan . -o textunmark.sarif
+```
+
+The CLI includes repository batch processing, SARIF output, HTML reports, TOML configuration, and the Python detector adapter interface.
 
 ## Development
 
@@ -265,49 +106,22 @@ Text remains in the browser; the included Web UI does not send it to a TextUnmar
 python -m pip install -e .
 python -m unittest discover -s tests -v
 python -m compileall -q src
-node --check web/app.js
+node --check web/engine.mjs
+node --check web/worker.mjs
+node --check web/app.mjs
+node --test web/engine.test.mjs
 ```
 
-GitHub Actions validates Python 3.11, 3.12, and 3.13 and performs smoke tests across the expanded CLI.
-
-## Project structure
-
-```text
-src/textunmark/
-  batch.py
-  cli.py
-  compare.py
-  config.py
-  detectors/
-  pipeline.py
-  report.py
-  sanitize.py
-  sarif.py
-  unicode_scan.py
-web/
-  index.html
-  styles.css
-  app.js
-tests/
-examples/
-```
-
-## Roadmap
-
-- Add provider-specific detector adapters only after reproducible public specifications/detectors exist.
-- Add benchmark datasets for watermark robustness research.
-- Add code-formatter/refactor robustness test suites.
-- Add richer detector calibration and false-positive evaluation.
-- Add optional packaged desktop/browser distribution without changing the local-first model.
+GitHub Actions runs Python tests on 3.11, 3.12, and 3.13 and runs the browser-engine checks/tests on Node 22.
 
 ## Design principles
 
-1. **Do not guess watermark mechanisms.** Provider-specific support is labeled supported only when independently reproducible.
-2. **Show mutations.** Sanitization is deterministic and before/after comparison is available.
-3. **Preserve meaning by default.** Context-sensitive Unicode is reported instead of silently deleted by the conservative profile.
-4. **Local first.** Core functionality runs without sending text to an external service.
-5. **Measure instead of claim.** Detector scores and robustness results should be reported rather than treated as proof of authorship.
-6. **Safe automation.** Recursive writes require explicit output or in-place options; dry-run is available for inspection-first workflows.
+1. **Browser first.** A normal user should be able to open a URL, paste text, inspect it, and export a result without installing Python.
+2. **Local processing.** The included Web app has no TextUnmark backend and does not upload the inspected text to one.
+3. **Inspect before mutate.** Browser default is non-mutating; cleanup is explicit and previewed.
+4. **Show exact changes.** Mutation records identify removal, replacement, or normalization instead of presenting an unreliable edit count.
+5. **Do not guess provider watermarks.** Unsupported provider detectors remain visibly unavailable.
+6. **Do not present descriptive artifact metrics as authorship probabilities.**
 
 ## License
 
