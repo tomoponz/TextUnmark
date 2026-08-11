@@ -22,11 +22,28 @@ jobs:
           cache: pip
       - name: Install package
         run: python -m pip install -e .
+      - name: Compile package
+        run: python -m compileall -q src
       - name: Run tests
         run: python -m unittest discover -s tests -v
-      - name: CLI smoke test
+      - name: CLI smoke tests
         run: |
-          printf 'A\u200bB\n' > /tmp/sample.txt
-          textunmark inspect /tmp/sample.txt
-          textunmark sanitize /tmp/sample.txt -o /tmp/clean.txt
-          textunmark compare /tmp/sample.txt /tmp/clean.txt
+          set -eu
+          mkdir -p /tmp/textunmark-tree/docs
+          printf 'A\u200bB\n' > /tmp/textunmark-tree/sample.txt
+          printf 'hello\u00a0world\n' > /tmp/textunmark-tree/docs/readme.md
+          textunmark --version
+          textunmark doctor
+          textunmark detectors
+          textunmark inspect /tmp/textunmark-tree/sample.txt
+          textunmark sanitize /tmp/textunmark-tree/sample.txt -o /tmp/clean.txt
+          textunmark compare /tmp/textunmark-tree/sample.txt /tmp/clean.txt
+          textunmark detect /tmp/textunmark-tree/sample.txt --json > /tmp/detect.json
+          textunmark analyze /tmp/textunmark-tree/sample.txt --json > /tmp/analyze.json
+          textunmark batch /tmp/textunmark-tree --dry-run --json > /tmp/batch.json
+          textunmark scan /tmp/textunmark-tree -o /tmp/results.sarif
+          textunmark report /tmp/textunmark-tree/sample.txt -o /tmp/report.html
+          test -s /tmp/results.sarif
+          test -s /tmp/report.html
+      - name: Validate browser JavaScript
+        run: node --check web/app.js
