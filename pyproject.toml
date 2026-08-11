@@ -4,12 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "textunmark"
-version = "0.1.0"
-description = "Inspect and normalize hidden Unicode markers in text, with reproducible before/after analysis."
+version = "0.2.0"
+description = "Local-first toolkit for Unicode artifact inspection, sanitization, scanning, and watermark-analysis experiments."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "tomoponz" }]
 dependencies = []
+keywords = ["unicode", "watermark", "text", "inspection", "sanitization"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
 
 [project.scripts]
 textunmark = "textunmark.cli:main"
