@@ -20,11 +20,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install package
         run: python -m pip install -e .
       - name: Compile package
         run: python -m compileall -q src
-      - name: Run tests
+      - name: Run Python tests
         run: python -m unittest discover -s tests -v
       - name: CLI smoke tests
         run: |
@@ -45,5 +48,10 @@ jobs:
           textunmark report /tmp/textunmark-tree/sample.txt -o /tmp/report.html
           test -s /tmp/results.sarif
           test -s /tmp/report.html
-      - name: Validate browser JavaScript
-        run: node --check web/app.js
+      - name: Validate browser modules
+        run: |
+          node --check web/engine.mjs
+          node --check web/worker.mjs
+          node --check web/app.mjs
+      - name: Run browser engine tests
+        run: node --test web/engine.test.mjs
